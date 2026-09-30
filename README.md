@@ -2,8 +2,10 @@
 
 DeLS-Spec is a lightweight plug-in for DFlash-style speculative decoding. It keeps the DFlash drafter fixed and adds an independently trained local head to model short-range causal dependencies inside draft blocks, improving acceptance length and decoding speed with minimal training cost.
 
-This repository contains the DeLS-Spec runtime and evaluation code. The training
-code is being organized and will be released separately.
+This repository contains the DeLS-Spec runtime and evaluation code. Training is
+maintained in [dt-3t/SpecForge](https://github.com/dt-3t/SpecForge/tree/add-dels-spec).
+See the [basic reproduction guide](docs/reproduction.md) for matching source
+snapshots, installation, and checkpoint formats.
 
 ![DeLS-Spec pipeline](asset/DeLS-Spec.jpg)
 
@@ -16,6 +18,10 @@ matches your CUDA driver, then install the benchmark dependencies:
 python -m pip install --upgrade pip
 python -m pip install -r requirements-hf.txt
 ```
+
+For online model and dataset downloads, set `HF_HUB_OFFLINE=0`,
+`HF_DATASETS_OFFLINE=0`, and `TRANSFORMERS_OFFLINE=0` before using the benchmark
+scripts. Their existing defaults assume a populated offline cache.
 
 ## Checkpoints
 
@@ -93,8 +99,22 @@ DELS_BASELINE_PATH=checkpoints/dels-spec/qwen3-8b/loss_mask_unigram.pt \
 
 ## Training
 
-This repository is focused on DeLS-Spec inference and evaluation. The training
-code is being organized and will be released separately.
+The [basic reproduction guide](docs/reproduction.md) provides matching source
+versions, dataset preparation, explicit RNN training settings, checkpoint
+selection, and a DFlash/DeLS comparison with the same Qwen3-8B target and data.
+Clone the paired training and runtime branches as described in the guide.
+The input-projected RNN trainer exports
+`merged_rnn_local_head.pt`, supported by this updated runtime. The initial runtime
+release `ab9be1b4` requires an update before using that format. Existing released
+`local_head.pt` weights remain supported.
+
+After training, set `DELS_LOCAL_HEAD` and `DELS_BASELINE_PATH` to the generated
+artifacts and run `bash reproduce_hf_comparison.sh`. The script writes DFlash and
+DeLS logs plus environment and artifact metadata into a fresh output directory.
+
+Source and CPU checkpoint compatibility have been checked. Full GPU training
+and paper benchmark results remain unverified; the guide includes a result
+reporting template.
 
 ## Acknowledgements
 

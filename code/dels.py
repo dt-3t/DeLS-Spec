@@ -117,9 +117,6 @@ def detect_local_head_checkpoint_kind(
 ) -> Literal["dels", "markov"]:
     """Return the local-head runtime kind for a SpecForge checkpoint."""
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if "embedding_weight" in checkpoint and "lm_head_weight" in checkpoint:
-        return "markov"
-
     state_dict = checkpoint.get("model_state_dict")
     if isinstance(state_dict, dict):
         if "down_proj" in state_dict and "up_proj" in state_dict:
@@ -131,9 +128,13 @@ def detect_local_head_checkpoint_kind(
     if isinstance(config, dict) and "gru_hidden_dim" in config:
         return "dels"
 
+    if "embedding_weight" in checkpoint and "lm_head_weight" in checkpoint:
+        return "markov"
+
     raise ValueError(
         "Cannot identify local-head checkpoint type. Expected a SpecForge "
-        "local_head.pt, markov_local_head.pt, or merged_markov_local_head.pt."
+        "local_head.pt, merged_rnn_local_head.pt, markov_local_head.pt, "
+        "or merged_markov_local_head.pt."
     )
 
 
@@ -153,6 +154,7 @@ class DeLSLocalHead(nn.Module):
         dtype: torch.dtype,
         device: torch.device,
         target_lm_head: Optional[nn.Module] = None,
+        embedding_weight: Optional[torch.Tensor] = None,
     ):
         super().__init__()
         if rank_activation not in _VALID_RANK_ACTIVATIONS:
@@ -160,7 +162,20 @@ class DeLSLocalHead(nn.Module):
                 f"rank_activation={rank_activation!r}; must be one of "
                 f"{_VALID_RANK_ACTIVATIONS}"
             )
-        self.embed_tokens = target_model.model.embed_tokens
+        if embedding_weight is None:
+            self.embed_tokens = target_model.model.embed_tokens
+        else:
+            expected_shape = (int(vocab_size), int(embed_dim))
+            if tuple(embedding_weight.shape) != expected_shape:
+                raise ValueError(
+                    f"Local embedding shape {tuple(embedding_weight.shape)} "
+                    f"does not match config {expected_shape}."
+                )
+            if target_model.lm_head.weight.shape[0] != int(vocab_size):
+                raise ValueError("Local-head vocabulary does not match the target model.")
+            self.embed_tokens = nn.Embedding.from_pretrained(
+                embedding_weight.to(device=device, dtype=dtype), freeze=True
+            )
         self.vocab_size = int(vocab_size)
         self.embed_dim = int(embed_dim)
         self.gru_hidden_dim = int(gru_hidden_dim)
@@ -208,6 +223,21 @@ class DeLSLocalHead(nn.Module):
                 "Local-head checkpoint must contain model_config and model_state_dict."
             )
 
+        parameterization = config.get(
+            "rnn_parameterization", config.get("local_head_parameterization")
+        )
+        embedding_weight = None
+        if parameterization == "direct_vocab" or config.get("architecture") == "direct_vocab_rnn":
+            embedding_weight = state_dict.get("embed_tokens.weight")
+            if embedding_weight is None:
+                raise ValueError("Direct-vocab RNN checkpoint has no embed_tokens.weight.")
+        elif "embed_down_proj.weight" in state_dict:
+            raise ValueError(
+                "This RNN checkpoint has an input projection. Use "
+                "merged_rnn_local_head.pt or convert it with SpecForge "
+                "scripts/convert_local_head.py before inference."
+            )
+
         model = cls(
             target_model=target_model,
             vocab_size=int(config["vocab_size"]),
@@ -219,8 +249,11 @@ class DeLSLocalHead(nn.Module):
             dtype=dtype,
             device=device,
             target_lm_head=target_model.lm_head,
+            embedding_weight=embedding_weight,
         )
-        model.pure_draft_prefix_len = int(config.get("pure_draft_prefix_len", 1))
+        model.pure_draft_prefix_len = int(
+            config.get("pure_draft_prefix_len", 0 if embedding_weight is not None else 1)
+        )
         model.shift_label = bool(config.get("shift_label", False))
 
         own_state = model.state_dict()
@@ -229,7 +262,9 @@ class DeLSLocalHead(nn.Module):
         for name, tensor in state_dict.items():
             if name in own_state and own_state[name].shape == tensor.shape:
                 filtered[name] = tensor.to(dtype=own_state[name].dtype)
-            elif name.startswith(("embed_tokens.", "target_lm_head.")):
+            elif name.startswith(("embed_tokens.", "target_lm_head.")) and not (
+                embedding_weight is not None and name.startswith("embed_tokens.")
+            ):
                 skipped.append(name)
             else:
                 raise ValueError(
