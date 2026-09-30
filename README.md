@@ -127,4 +127,17 @@ We thank the authors and maintainers of
 
 ## Citation
 
-If you use DeLS-Spec in your research, please cite our paper.
+If you use DeLS-Spec in your research, please cite our
+[paper](https://arxiv.org/abs/2607.07409):
+
+```bibtex
+@misc{zheng2026delsspecdecoupledlongshortcontexts,
+  title={DeLS-Spec: Decoupled Long-Short Contexts for Parallel Speculative Drafting},
+  author={Hong-Kai Zheng and Piji Li},
+  year={2026},
+  eprint={2607.07409},
+  archivePrefix={arXiv},
+  primaryClass={cs.CL},
+  url={https://arxiv.org/abs/2607.07409}
+}
+```
