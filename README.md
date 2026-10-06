@@ -1,5 +1,7 @@
 # DeLS-Spec: Decoupled Long-Short Contexts for Parallel Speculative Drafting
 
+[![Paper on arXiv](https://img.shields.io/badge/arXiv-2607.07409-b31b1b.svg)](https://arxiv.org/abs/2607.07409)
+
 DeLS-Spec is a lightweight plug-in for DFlash-style speculative decoding. It keeps the DFlash drafter fixed and adds an independently trained local head to model short-range causal dependencies inside draft blocks, improving acceptance length and decoding speed with minimal training cost.
 
 This repository contains the DeLS-Spec runtime and evaluation code. Training is
